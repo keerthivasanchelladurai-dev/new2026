@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Cosmic Book Reveal</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Great+Vibes&family=Montserrat:wght@300;600&family=Courier+Prime&family=Cinzel:wght@400;700&family=MedievalSharp&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <style>
+        /* --- CORE LAYOUT --- */
+        body { 
+            margin: 0; 
+            padding: 0;
+            overflow: hidden; 
+            background-color: #000; 
+            font-family: 'Montserrat', sans-serif;
+            touch-action: none; 
+            width: 100vw;
+            height: 100vh;
+        }
+
+        /* --- BACKGROUND VIDEO LAYER --- */
+        #bg-video {
+            position: fixed;
+            top: 0; left: 0; 
+            width: 100%; height: 100%;
+            object-fit: cover;
+            z-index: 0;
+            opacity: 1;
+            transition: opacity 1s ease;
+        }
+        
+        /* Fallback Overlay if video is dark */
+        .bg-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6); z-index: 1; pointer-events: none;
+        }
+
+        /* --- THREE.JS CANVAS --- */
+        #three-canvas-container {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 5;
+            pointer-events: auto; /* Allow orbit controls initially */
+        }
+        canvas { display: block; outline: none; }
+
+        /* --- UI ELEMENTS (From Uploaded File) --- */
+        #splash-screen {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background-color: #000;
+            z-index: 100;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            transition: opacity 1.5s ease-out;
+            pointer-events: none; 
+        }
+        .loader-text {
+            color: #fff; font-family: 'Montserrat', sans-serif; letter-spacing: 5px;
+            font-size: clamp(0.8rem, 3vw, 1.2rem); text-transform: uppercase;
+            animation: pulse 2s infinite; text-align: center;
+        }
+        @keyframes pulse { 0% { opacity: 0.3; } 50% { opacity: 1; } 100% { opacity: 0.3; } }
+
+        #ui-layer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; z-index: 10;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+        }
+
+        #countdown-display {
+            font-family: 'Montserrat', sans-serif;
+            font-size: clamp(4rem, 20vw, 12rem); font-weight: 300;
+            color: rgba(255, 255, 255, 0.9);
+            text-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
+            opacity: 0; transition: opacity 0.5s ease-out;
+        }
+        .countdown-pulse { animation: countPulse 0.9s ease-in-out infinite; }
+        @keyframes countPulse {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.1); opacity: 0.8; }
+            100% { transform: scale(1); opacity: 0; }
+        }
+
+        /* =========================================
+           --- 3D BOOK STYLES (Merged) --- 
+           ========================================= */
+        #book-wrapper {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; align-items: center; justify-content: center;
+            perspective: 1500px;
+            z-index: 20; /* Above particles */
+            opacity: 0; /* Hidden initially */
+            pointer-events: none; /* Let clicks pass through until active */
+            
+            /* Initial Fly-in State: Off-screen Right, Small */
+            transform: translateX(120vw) scale(0.6) rotateY(-30deg);
+            transition: transform 2.0s cubic-bezier(0.19, 1, 0.22, 1), opacity 1s ease;
+        }
+        
+        /* The Class Triggered by JS to fly it in */
+        .visible-book {
+            transform: translateX(0) scale(1) rotateY(0deg) !important;
+            opacity: 1 !important;
+            pointer-events: auto !important;
+        }
+
+        :root {
+            /* Mobile First Dimensions */
+            --book-width: 80vw; 
+            --book-height: 110vw;
+            --max-width: 340px;
+            --max-height: 480px;
+            
+            --cover-color: #3e1e1e;
+            --cover-dark: #2a1414;
+            --gold: #d4af37;
+            --page-bg: #f4e4bc;
+            --anim-speed: 0.8s;
+        }
+
+        @media (min-width: 768px) {
+            :root {
+                --book-width: 400px;
+                --book-height: 520px;
+            }
+        }
+        
+        /* Cap sizes for tablets/large phones */
+        @media (min-width: 500px) and (max-width: 767px) {
+            :root {
+                --book-width: 320px;
+                --book-height: 440px;
+            }
+        }
+
+        /* --- 3D Scene Wrapper --- */
+        .scene {
+            position: relative;
+            width: var(--book-width);
+            height: var(--book-height);
+            max-width: var(--max-width);
+            max-height: var(--max-height);
+            transform-style: preserve-3d;
+            transition: transform 0.1s ease-out;
+        }
+
+        /* --- The Book --- */
+        .book {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            transform-style: preserve-3d;
+            transform: rotateX(20deg) rotateY(0deg) rotateZ(0deg); 
+            transition: transform 0.5s ease;
+        }
+
+        @media (max-width: 768px) {
+             .book { transform: rotateX(10deg); }
+        }
+
+        /* --- Pages & Covers --- */
+        .page {
+            position: absolute;
+            width: 100%; height: 100%; top: 0; left: 0;
+            transform-origin: left center;
+            transform-style: preserve-3d;
+            transition: transform var(--anim-speed) cubic-bezier(0.645, 0.045, 0.355, 1);
+            cursor: pointer;
+        }
+
+        .cover {
+            background: linear-gradient(135deg, var(--cover-color) 0%, var(--cover-dark) 100%);
+            border-radius: 4px 12px 12px 4px;
+            box-shadow: inset 4px 0 10px rgba(0,0,0,0.5), 10px 10px 30px rgba(0,0,0,0.6);   
+        }
+
+        .cover-border {
+            position: absolute; top: 5%; left: 5%; right: 5%; bottom: 5%;
+            border: 2px solid var(--gold); border-radius: 2px 8px 8px 2px;
+            pointer-events: none; box-shadow: 0 0 5px rgba(212, 175, 55, 0.3); z-index: 5; 
+        }
+
+        .front-content {
+            position: absolute; width: 100%; height: 100%;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            backface-visibility: hidden; z-index: 2; transform: translateZ(1px); 
+            padding: 0; overflow: hidden; border-radius: 0 10px 10px 0;
+        }
+        
+        .cover .front-content { border-radius: 4px 12px 12px 4px; }
+
+        .back-content {
+            position: absolute; width: 100%; height: 100%;
+            background: linear-gradient(to right, #e3cfaa, #f4e4bc);
+            transform: rotateY(180deg); backface-visibility: hidden;
+            border-radius: 4px 0 0 4px;
+            box-shadow: inset -5px 0 10px rgba(0,0,0,0.1);
+            background-image: url("data:image/svg+xml,%3Csvg width='100%25' height='100%25' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='paper'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.04' numOctaves='5'/%3E%3CfeColorMatrix type='matrix' values='1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0.1 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23paper)' opacity='0.4'/%3E%3C/svg%3E");
+        }
+
+        .sheet {
+            background-color: var(--page-bg);
+            background-image: linear-gradient(to right, #e3d2b2 0%, #f4e4bc 20%, #f4e4bc 95%, #decba7 100%);
+            border-radius: 0 10px 10px 0;
+            box-shadow: inset 3px 0 10px rgba(0,0,0,0.1), 1px 1px 4px rgba(0,0,0,0.2);     
+        }
+
+        .sheet .front-content {
+            padding: 8px; box-sizing: border-box;
+            background-image: url("data:image/svg+xml,%3Csvg width='100%25' height='100%25' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='paper'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.04' numOctaves='5'/%3E%3CfeColorMatrix type='matrix' values='1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0.2 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23paper)' opacity='0.3'/%3E%3C/svg%3E");
+        }
+        
+        .page-img {
+            width: 100%; height: 100%; object-fit: cover; 
+            border: 2px solid #5a4a3a; border-radius: 2px;
+            filter: sepia(0.3) contrast(1.1); background-color: #d1bfa1;
+            box-shadow: 1px 1px 4px rgba(0,0,0,0.2); display: block;
+        }
+
+        #page1 { z-index: 8; } 
+        #page2 { z-index: 7; } 
+        #page3 { z-index: 6; } 
+        #page4 { z-index: 5; } 
+        #page5 { z-index: 4; } 
+        #page6 { z-index: 3; } 
+        #page7 { z-index: 2; } 
+        #back-cover { z-index: 1; }
+
+        .flipped { transform: rotateY(-180deg); z-index: 10 !important; }
+
+        .book-hint {
+            position: absolute; bottom: 30px; width: 100%; text-align: center;
+            color: rgba(255,255,255,0.5); font-size: 0.8rem; pointer-events: none;
+            text-shadow: 0 1px 2px black; font-family: 'Crimson Text', serif;
+            opacity: 0; transition: opacity 1s;
+        }
+
+        /* --- FINAL CARD STYLES --- */
+        #final-card {
+            position: fixed;
+            bottom: -50vh; /* Start off screen */
+            left: 50%;
+            transform: translateX(-50%);
+            width: 85%;
+            max-width: 500px;
+            min-height: 150px;
+            background: #eecfa1; /* Parchmentish */
+            background-image: url("data:image/svg+xml,%3Csvg width='100%25' height='100%25' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='paper'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.04' numOctaves='5'/%3E%3CfeColorMatrix type='matrix' values='1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0.1 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23paper)' opacity='0.4'/%3E%3C/svg%3E");
+            border: 3px double #5a3a2a;
+            border-radius: 8px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 200;
+            transition: bottom 1s cubic-bezier(0.34, 1.56, 0.64, 1); /* Bounce effect */
+            font-family: 'Crimson Text', serif;
+            text-align: center;
+            padding: 2rem;
+            pointer-events: auto;
+            color: #3e1e1e;
+        }
+
+        #final-card.visible-card {
+            bottom: 40px; /* Final position */
+        }
+
+        .moon-badge {
+            position: absolute;
+            top: -20px;
+            right: -20px;
+            width: 60px;
+            height: 60px;
+            background: #2a1414;
+            border: 3px solid #d4af37;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            z-index: 201;
+        }
+        
+        .card-text {
+            font-size: 1.6rem;
+            font-style: italic;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- BACKGROUND VIDEO (Persists) -->
+    <video id="bg-video" muted playsinline preload="auto" loop>
+        <source src="hpv.mp4" type="video/mp4">
+        <!-- Fallback color -->
+        <div style="width:100%; height:100%; background: #111;"></div>
+    </video>
+    
+    <!-- BACKGROUND AUDIO (Added as per request) -->
+    <audio id="bg-music" loop>
+        <source src="prof.mp3" type="audio/mpeg">
+    </audio>
+
+    <div class="bg-overlay"></div>
+
+    <!-- LOADING SCREEN -->
+    <div id="splash-screen">
+        <div class="loader-text">TO YOU FOR 2020...</div>
+    </div>
+
+    <!-- THREE.JS LAYER (Particles) -->
+    <div id="three-canvas-container"></div>
+
+    <!-- UI LAYER (Countdown / Modals) -->
+    <div id="ui-layer">
+        <div id="countdown-display"></div>
+    </div>
+
+    <!-- BOOK LAYER (Initially Hidden) -->
+    <div id="book-wrapper">
+        <div class="scene" id="scene">
+            <div class="book" id="book">
+                <!-- Page 1: Front Cover -->
+                <div class="page cover" id="page1" onclick="flipPage(1)">
+                    <div class="front-content">
+                        <!-- Use Screenshot as Cover as well for consistency, or keep title -->
+                         <img src="images/image0.png" alt="Cover" class="page-img" style="border:none; border-radius: 4px 12px 12px 4px;">
+                    </div>
+                    <div class="back-content"></div>
+                </div>
+                <!-- Page 2 -->
+                <div class="page sheet" id="page2" onclick="flipPage(2)">
+                    <div class="front-content"><img src="images/image1.png" class="page-img"></div>
+                    <div class="back-content"></div>
+                </div>
+                <!-- Page 3 -->
+                <div class="page sheet" id="page3" onclick="flipPage(3)">
+                    <div class="front-content"><img src="images/image2.png" class="page-img"></div>
+                    <div class="back-content"></div>
+                </div>
+                <!-- Page 4 -->
+                <div class="page sheet" id="page4" onclick="flipPage(4)">
+                    <div class="front-content"><img src="images/image3.png" class="page-img"></div>
+                    <div class="back-content"></div>
+                </div>
+                <!-- Page 5 -->
+                <div class="page sheet" id="page5" onclick="flipPage(5)">
+                   <div class="front-content"><img src="images/image4.png" class="page-img"></div>
+                   <div class="back-content"></div>
+               </div>
+               <!-- Page 6 -->
+               <div class="page sheet" id="page6" onclick="flipPage(6)">
+                   <div class="front-content"><img src="images/image5.png" class="page-img"></div>
+                   <div class="back-content"></div>
+               </div>
+               <!-- Page 7 -->
+               <div class="page sheet" id="page7" onclick="flipPage(7)">
+                   <div class="front-content"><img src="images/image6.png" class="page-img"></div>
+                   <div class="back-content"></div>
+               </div>
+                <!-- Back Cover -->
+                <div class="page cover" id="back-cover">
+                    <div class="front-content"></div>
+                    <div class="back-content cover" style="transform: rotateY(180deg); border-radius: 12px 4px 4px 12px; box-shadow: -10px 10px 30px rgba(0,0,0,0.6);">
+                        <div class="cover-border"></div>
+                        <div class="flex items-center justify-center h-full">
+                            <span class="text-gold text-2xl font-bold tracking-widest opacity-80" style="color: var(--gold);">H P</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="book-hint" id="book-hint">Tilt to explore • Tap to flip</div>
+        </div>
+    </div>
+
+    <!-- FINAL CARD -->
+    <div id="final-card">
+        <div class="moon-badge">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#d4af37" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+            </svg>
+        </div>
+        <div class="card-text">
+            "best wwishes for 2026..."
+        </div>
+    </div>
+
+    <!-- LOGIC -->
+    <script>
+        // --- CONFIG ---
+        const CONFIG = {
+            countdownStart: 5,
+            particleCount: 15000, 
+            cameraZ: 75,
+            nameToRender: "Ambrin",
+            helloText: "Hello ",
+        };
+
+        const STATE = { 
+            COUNTDOWN: 0,
+            VIDEO_PLAYING: 1, 
+            FORMING_HELLO: 2, 
+            HOLDING_HELLO: 3,
+            BLAST_HELLO: 4,
+            WAITING: 5, 
+            REASSEMBLING_NAME: 6,
+            HOLDING_NAME: 7,
+            DISPERSING: 8,
+            BOOK_REVEAL: 9
+        };
+
+        let currentState = STATE.COUNTDOWN;
+        let stateTimer = 0;
+        let countdownValue = CONFIG.countdownStart;
+        let countdownInterval;
+
+        let scene, camera, renderer, clock, controls;
+        let starGroup;
+        let particleSystem;
+        let particleAttributes = { 
+            positions: null, 
+            velocities: null,
+            targetHello: null, 
+            targetName: null, 
+            currentTargets: null
+        };
+        let isDragging = false;
+        let isBookResetting = false; // Flag to prevent rapid clicking
+
+        window.onload = init;
+
+        function init() {
+            // Mobile Interaction for Video
+            document.body.addEventListener('touchstart', handleInteraction, {once:true});
+            document.body.addEventListener('click', handleInteraction, {once:true});
+
+            setTimeout(() => {
+                document.getElementById('splash-screen').style.opacity = 0;
+                const vid = document.getElementById('bg-video');
+                if(vid) vid.pause(); // Ensure paused until countdown ends
+                setTimeout(() => document.getElementById('splash-screen').style.display = 'none', 1500);
+                startCountdown();
+            }, 2000);
+
+            initThreeJS();
+        }
+
+        function handleInteraction() {
+            const vid = document.getElementById('bg-video');
+            const audio = document.getElementById('bg-music');
+
+            if(vid) {
+                vid.play().then(() => {
+                    if(currentState === STATE.COUNTDOWN) vid.pause();
+                }).catch(e => console.log("Video init interaction", e));
+            }
+            
+            // Play audio on interaction
+            if(audio) {
+                audio.play().catch(e => console.log("Audio play error", e));
+            }
+        }
+
+        function startCountdown() {
+            const display = document.getElementById('countdown-display');
+            display.style.opacity = 1;
+            display.innerText = countdownValue;
+            display.classList.add('countdown-pulse');
+
+            countdownInterval = setInterval(() => {
+                countdownValue--;
+                if(countdownValue > 0) {
+                    display.innerText = countdownValue;
+                    display.style.animation = 'none';
+                    void display.offsetHeight; 
+                    display.style.animation = 'countPulse 0.9s ease-in-out infinite';
+                } else {
+                    clearInterval(countdownInterval);
+                    display.classList.remove('countdown-pulse');
+                    display.style.opacity = 0;
+                    setTimeout(() => { display.style.display = 'none'; }, 600);
+                    playVideoSequence();
+                }
+            }, 1000);
+        }
+
+        function playVideoSequence() {
+            currentState = STATE.VIDEO_PLAYING;
+            const vid = document.getElementById('bg-video');
+            const audio = document.getElementById('bg-music');
+
+            if(vid) {
+                vid.play().catch(e => console.log("Autoplay error", e));
+                startParticleHello(); 
+            } else {
+                startParticleHello();
+            }
+            
+            // Backup Play call for audio if interaction happened but play() failed or needed user gesture again
+            if(audio && audio.paused) {
+                 audio.play().catch(e => console.log("Audio play retry error", e));
+            }
+        }
+
+        function startParticleHello() {
+            createParticleSystem(); 
+            currentState = STATE.FORMING_HELLO;
+            particleAttributes.currentTargets = particleAttributes.targetHello;
+        }
+
+        // --- THREE.JS LOGIC ---
+        function initThreeJS() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 10000);
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            document.getElementById('three-canvas-container').appendChild(renderer.domElement);
+
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.enablePan = false;
+            controls.enableZoom = false; 
+            controls.minAzimuthAngle = -Math.PI / 2; 
+            controls.maxAzimuthAngle = Math.PI / 2;
+            controls.minPolarAngle = Math.PI/2 - 0.5; controls.maxPolarAngle = Math.PI/2 + 0.5;
+            
+            controls.addEventListener('start', () => { isDragging = true; });
+            controls.addEventListener('end', () => { isDragging = false; });
+
+            clock = new THREE.Clock();
+
+            // Lights
+            scene.add(new THREE.AmbientLight(0x444444, 0.8));
+            const sunLight = new THREE.DirectionalLight(0xffffff, 1.5);
+            sunLight.position.set(100, 50, 100);
+            scene.add(sunLight);
+
+            createDeepStarfield();
+            onResize();
+            window.addEventListener('resize', onResize);
+            animate();
+        }
+
+        function getCircleTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 32; canvas.height = 32;
+            const ctx = canvas.getContext('2d');
+            const grad = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+            grad.addColorStop(0, 'rgba(255, 255, 255, 1)');     
+            grad.addColorStop(1, 'rgba(0, 0, 0, 0)');           
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, 32, 32);
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        function generateTextTargets(text, fontSize) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 1024; canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#000000'; ctx.fillRect(0,0,1024,512);
+            ctx.fillStyle = '#ffffff';
+            
+            const isHello = text.includes("Hello");
+            const fontName = "Montserrat"; 
+            const fontStyle = isHello ? "italic bold" : "bold";
+            const actualFontSize = (window.innerWidth < 768) ? fontSize * 0.8 : fontSize;
+            
+            ctx.font = `${fontStyle} ${actualFontSize}px "${fontName}", sans-serif`;
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(text, 512, 256);
+
+            const data = ctx.getImageData(0,0,1024,512).data;
+            const validPoints = [];
+            const step = 4; 
+            for(let y=0; y<512; y+=step) { 
+                for(let x=0; x<1024; x+=step) {
+                    if(data[(y*1024 + x)*4] > 128) {
+                        validPoints.push({ x: (x - 512) * 0.1, y: -(y - 256) * 0.1 });
+                    }
+                }
+            }
+            return validPoints;
+        }
+
+        function createDeepStarfield() {
+            starGroup = new THREE.Group();
+            const starTexture = getCircleTexture();
+            const dustGeo = new THREE.BufferGeometry();
+            const dustPos = [];
+            for(let i=0; i<8000; i++) {
+                const r = 500 + Math.random() * 1000;
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.acos(2 * Math.random() - 1);
+                dustPos.push(r * Math.sin(phi) * Math.cos(theta), r * Math.sin(phi) * Math.sin(theta), r * Math.cos(phi));
+            }
+            dustGeo.setAttribute('position', new THREE.Float32BufferAttribute(dustPos, 3));
+            const dustMat = new THREE.PointsMaterial({ color: 0x556677, size: 0.8, map: starTexture, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false });
+            starGroup.add(new THREE.Points(dustGeo, dustMat));
+            scene.add(starGroup);
+        }
+
+        function createParticleSystem() {
+            if (particleSystem) return;
+            const count = CONFIG.particleCount; 
+            const geo = new THREE.BufferGeometry();
+            const posArray = new Float32Array(count * 3);
+            const velArray = [];
+            const cols = [];
+            
+            const helloPoints = generateTextTargets(CONFIG.helloText, 120);
+            const namePoints = generateTextTargets(CONFIG.nameToRender, 100);
+
+            const targetHelloArr = new Float32Array(count * 3);
+            const targetNameArr = new Float32Array(count * 3);
+
+            const palette = [new THREE.Color(0xffffff), new THREE.Color(0xaaddff), new THREE.Color(0x8899ff)];
+
+            for(let i=0; i<count; i++) {
+                // Initial Random
+                const r = 200 + Math.random() * 300;
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.acos(2 * Math.random() - 1);
+                
+                const x = r * Math.sin(phi) * Math.cos(theta);
+                const y = r * Math.sin(phi) * Math.sin(theta);
+                const z = r * Math.cos(phi);
+
+                posArray[i*3] = x; posArray[i*3+1] = y; posArray[i*3+2] = z;
+                velArray.push(0, 0, 0);
+
+                const c = palette[Math.floor(Math.random() * palette.length)];
+                cols.push(c.r, c.g, c.b);
+
+                // Setup Targets
+                if(helloPoints.length > 0) {
+                    const pt = helloPoints[i % helloPoints.length];
+                    targetHelloArr[i*3] = pt.x; targetHelloArr[i*3+1] = pt.y; targetHelloArr[i*3+2] = 0;
+                } else { targetHelloArr[i*3]=x; targetHelloArr[i*3+1]=y; targetHelloArr[i*3+2]=z; }
+
+                if(namePoints.length > 0) {
+                    const pt = namePoints[i % namePoints.length];
+                    targetNameArr[i*3] = pt.x; targetNameArr[i*3+1] = pt.y; targetNameArr[i*3+2] = 0;
+                } else { targetNameArr[i*3]=x; targetNameArr[i*3+1]=y; targetNameArr[i*3+2]=z; }
+            }
+
+            geo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+            geo.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+            
+            const mat = new THREE.PointsMaterial({ 
+                size: 0.6, vertexColors: true, transparent: true, opacity: 0.9,
+                map: getCircleTexture(), blending: THREE.AdditiveBlending, depthWrite: false
+            });
+
+            particleSystem = new THREE.Points(geo, mat);
+            scene.add(particleSystem);
+
+            particleAttributes.positions = posArray;
+            particleAttributes.velocities = velArray;
+            particleAttributes.targetHello = targetHelloArr;
+            particleAttributes.targetName = targetNameArr;
+        }
+
+        // --- ANIMATION LOOP ---
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update(); 
+            const time = clock.getElapsedTime();
+
+            if (!isDragging && currentState !== STATE.BOOK_REVEAL) {
+                camera.position.x += (0 - camera.position.x) * 0.05;
+                camera.position.y += (0 - camera.position.y) * 0.05;
+                camera.lookAt(scene.position);
+            }
+
+            // STATE MACHINE
+            if (currentState === STATE.FORMING_HELLO) {
+                performAssembly(0.04);
+                if(!stateTimer) stateTimer = time;
+                if(time - stateTimer > 3.0) { currentState = STATE.HOLDING_HELLO; stateTimer = time; }
+            }
+            else if (currentState === STATE.HOLDING_HELLO) {
+                performAssembly(0.01);
+                if(time - stateTimer > 2.0) {
+                    currentState = STATE.BLAST_HELLO;
+                    // Explosion
+                    const vels = particleAttributes.velocities;
+                    const pos = particleSystem.geometry.attributes.position.array;
+                    for(let i=0; i<CONFIG.particleCount; i++) {
+                        const i3 = i*3;
+                        const vec = new THREE.Vector3(pos[i3], pos[i3+1], pos[i3+2]).normalize().multiplyScalar(0.5 + Math.random() * 1.5);
+                        vels[i3] = vec.x; vels[i3+1] = vec.y; vels[i3+2] = vec.z;
+                    }
+                    stateTimer = time;
+                }
+            }
+            else if (currentState === STATE.BLAST_HELLO) {
+                const pos = particleSystem.geometry.attributes.position.array;
+                const vels = particleAttributes.velocities;
+                for(let i=0; i<CONFIG.particleCount; i++) {
+                    const i3 = i*3;
+                    pos[i3] += vels[i3]; pos[i3+1] += vels[i3+1]; pos[i3+2] += vels[i3+2];
+                    vels[i3] *= 0.98; vels[i3+1] *= 0.98; vels[i3+2] *= 0.98;
+                }
+                particleSystem.geometry.attributes.position.needsUpdate = true;
+                
+                if(time - stateTimer > 2.5) {
+                    // AUTO TRANSITION
+                    currentState = STATE.REASSEMBLING_NAME;
+                    particleAttributes.currentTargets = particleAttributes.targetName;
+                    
+                    // Reset velocities for reassembly
+                    const vels = particleAttributes.velocities;
+                    for(let i=0; i < vels.length; i++) vels[i] = 0;
+                    
+                    stateTimer = time;
+                }
+            }
+            else if (currentState === STATE.REASSEMBLING_NAME) {
+                performAssembly(0.05); 
+                if(!stateTimer) stateTimer = clock.getElapsedTime();
+                if(clock.getElapsedTime() - stateTimer > 3.0) { currentState = STATE.HOLDING_NAME; stateTimer = clock.getElapsedTime(); }
+            }
+            else if (currentState === STATE.HOLDING_NAME) {
+                performAssembly(0.01);
+                if(clock.getElapsedTime() - stateTimer > 2.0) {
+                    currentState = STATE.DISPERSING;
+                    stateTimer = clock.getElapsedTime();
+                    // Gentle disperse
+                    const vels = particleAttributes.velocities;
+                    const pos = particleSystem.geometry.attributes.position.array;
+                    for(let i=0; i<CONFIG.particleCount; i++) {
+                        const i3 = i*3;
+                        const v = new THREE.Vector3(pos[i3], pos[i3+1], pos[i3+2]).normalize().multiplyScalar(0.3 + Math.random()*0.4);
+                        vels[i3] = v.x; vels[i3+1] = v.y; vels[i3+2] = v.z;
+                    }
+                }
+            }
+            else if (currentState === STATE.DISPERSING) {
+                const pos = particleSystem.geometry.attributes.position.array;
+                const vels = particleAttributes.velocities;
+                for(let i=0; i<CONFIG.particleCount; i++) {
+                    const i3 = i*3;
+                    pos[i3] += vels[i3]; pos[i3+1] += vels[i3+1]; pos[i3+2] += vels[i3+2];
+                    vels[i3] *= 0.98; vels[i3+1] *= 0.98; vels[i3+2] *= 0.98;
+                }
+                particleSystem.geometry.attributes.position.needsUpdate = true;
+
+                if(clock.getElapsedTime() - stateTimer > 2.0) {
+                    currentState = STATE.BOOK_REVEAL;
+                    revealBook();
+                }
+            }
+            else if (currentState === STATE.BOOK_REVEAL) {
+                // Fade out particles
+                if(particleSystem.material.opacity > 0) {
+                    particleSystem.material.opacity -= 0.02;
+                } else {
+                    particleSystem.visible = false;
+                }
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        function performAssembly(speed) {
+            if(!particleSystem) return;
+            const positions = particleSystem.geometry.attributes.position.array;
+            const targets = particleAttributes.currentTargets;
+            
+            particleSystem.rotation.y *= 0.9; 
+
+            for(let i=0; i<CONFIG.particleCount; i++) {
+                const i3 = i*3;
+                positions[i3] += (targets[i3] - positions[i3]) * speed;
+                positions[i3+1] += (targets[i3+1] - positions[i3+1]) * speed;
+                positions[i3+2] += (targets[i3+2] - positions[i3+2]) * speed;
+                positions[i3] += (Math.random()-0.5)*0.02;
+                positions[i3+1] += (Math.random()-0.5)*0.02;
+            }
+            particleSystem.geometry.attributes.position.needsUpdate = true;
+        }
+
+        function revealBook() {
+            // Disable Orbit Controls for ThreeJS so they don't fight with Book Tilt
+            controls.enabled = false;
+            
+            // Fly In Animation Class
+            const bookWrap = document.getElementById('book-wrapper');
+            bookWrap.classList.add('visible-book');
+            document.getElementById('book-hint').style.opacity = 1;
+
+            // Start Book Interaction Listeners
+            initBookInteraction();
+        }
+
+        function onResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            const aspect = window.innerWidth / window.innerHeight;
+            if (aspect < 1.0) {
+                const newZ = CONFIG.cameraZ / aspect * 0.8; 
+                camera.position.z = Math.min(newZ, 200); 
+            } else {
+                camera.position.z = CONFIG.cameraZ;
+            }
+        }
+
+        /* =========================================
+           --- BOOK LOGIC (Merged) ---
+           ========================================= */
+        const bookScene = document.getElementById('scene');
+        const bookEl = document.getElementById('book');
+        let bounds = document.body.getBoundingClientRect();
+        const totalPages = 7; 
+
+        function initBookInteraction() {
+             document.addEventListener('mousemove', (e) => handleBookMove(e.clientX, e.clientY));
+             document.addEventListener('touchmove', (e) => {
+                if(e.touches.length > 0) handleBookMove(e.touches[0].clientX, e.touches[0].clientY);
+             });
+             window.addEventListener('resize', () => bounds = document.body.getBoundingClientRect());
+        }
+
+        function handleBookMove(clientX, clientY) {
+            // Only runs if book is visible logic could be added, but event listener added only on reveal
+            const centerX = bounds.width / 2;
+            const centerY = bounds.height / 2;
+            const limit = window.innerWidth < 768 ? 10 : 15;
+            const rotateY = ((clientX - centerX) / centerX) * limit; 
+            const rotateX = -((clientY - centerY) / centerY) * limit; 
+            bookScene.style.transform = `rotateX(${rotateX}deg) rotateY(${rotateY}deg)`;
+        }
+
+        window.flipPage = function(pageNum) {
+            if(isBookResetting) return; // Prevent interaction during reset
+
+            const page = document.getElementById(`page${pageNum}`);
+            if (page.classList.contains('flipped')) {
+                page.classList.remove('flipped');
+                setTimeout(() => {
+                    page.style.zIndex = (8 - (pageNum - 1));
+                }, 400); 
+            } else {
+                page.classList.add('flipped');
+                if (pageNum === totalPages) {
+                    setTimeout(() => resetBook(), 2000); 
+                }
+            }
+            updateBookThickness();
+        }
+
+        function updateBookThickness() {
+            const openPages = document.querySelectorAll('.flipped').length;
+            let xShift = 0;
+            let rotX = 20;
+            if (window.innerWidth < 768) rotX = 10;
+
+            if(openPages > 0 && openPages < totalPages) {
+                xShift = 15; 
+                if (window.innerWidth < 768) xShift = 10;
+                bookEl.style.transform = `translateX(${xShift}%) rotateX(${rotX}deg)`; 
+            } else {
+                bookEl.style.transform = `translateX(0) rotateX(${rotX}deg)`; 
+            }
+        }
+
+        function resetBook() {
+            isBookResetting = true;
+            // Add no-pointer events style to book momentarily
+            bookEl.style.pointerEvents = 'none';
+
+            for (let i = totalPages; i >= 1; i--) {
+                const p = document.getElementById(`page${i}`);
+                if (p.classList.contains('flipped')) {
+                    setTimeout(() => {
+                         p.classList.remove('flipped');
+                         // Restore z-index halfway through animation
+                         setTimeout(() => p.style.zIndex = (8 - (i - 1)), 400);
+                    }, (totalPages - i) * 150); // Increased spacing between pages closing
+                }
+            }
+            
+            // Re-enable interaction after all animations + buffer
+            setTimeout(() => {
+                updateBookThickness();
+                isBookResetting = false;
+                bookEl.style.pointerEvents = 'auto';
+                
+                // SHOW FINAL CARD
+                document.getElementById('final-card').classList.add('visible-card');
+                
+            }, totalPages * 150 + 800);
+        }
+    </script>
+</body>
+</html>

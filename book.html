@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Harry Potter 3D Parallax Spellbook</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=MedievalSharp&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            /* Mobile First Dimensions */
+            --book-width: 80vw; 
+            --book-height: 110vw;
+            --max-width: 340px;
+            --max-height: 480px;
+            
+            --cover-color: #3e1e1e;
+            --cover-dark: #2a1414;
+            --gold: #d4af37;
+            --page-bg: #f4e4bc;
+            --anim-speed: 0.8s;
+        }
+
+        @media (min-width: 768px) {
+            :root {
+                --book-width: 400px;
+                --book-height: 520px;
+            }
+        }
+        
+        /* Cap sizes for tablets/large phones */
+        @media (min-width: 500px) and (max-width: 767px) {
+            :root {
+                --book-width: 320px;
+                --book-height: 440px;
+            }
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #0f0f12;
+            background-image: radial-gradient(circle at 50% 50%, #1a1a2e 0%, #050505 100%);
+            color: #1a1a1a;
+            font-family: 'Crimson Text', serif;
+            perspective: 1500px;
+            height: 100vh;
+            width: 100vw;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+            touch-action: none; /* Prevent scroll on mobile for better touch control */
+        }
+
+        /* --- Background Floating Elements --- */
+        .stars, .particles {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .particle {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.7);
+            border-radius: 50%;
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+            animation: float linear infinite;
+        }
+
+        @keyframes float {
+            0% { transform: translateY(0) translateX(0); opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { transform: translateY(-100px) translateX(20px); opacity: 0; }
+        }
+
+        /* --- 3D Scene Wrapper --- */
+        .scene {
+            position: relative;
+            width: var(--book-width);
+            height: var(--book-height);
+            /* Constraints to prevent it getting too big on weird aspect ratios */
+            max-width: var(--max-width);
+            max-height: var(--max-height);
+            
+            transform-style: preserve-3d;
+            transition: transform 0.1s ease-out;
+            z-index: 10;
+        }
+
+        /* --- The Book --- */
+        .book {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            transform-style: preserve-3d;
+            transform: rotateX(20deg) rotateY(0deg) rotateZ(0deg); 
+            transition: transform 0.5s ease;
+        }
+
+        @media (max-width: 768px) {
+             .book {
+                transform: rotateX(10deg); /* Less tilt on mobile */
+             }
+        }
+
+        /* --- Pages & Covers --- */
+        .page {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            transform-origin: left center;
+            transform-style: preserve-3d;
+            transition: transform var(--anim-speed) cubic-bezier(0.645, 0.045, 0.355, 1);
+            cursor: pointer;
+        }
+
+        /* Front Cover */
+        .cover {
+            background: linear-gradient(135deg, var(--cover-color) 0%, var(--cover-dark) 100%);
+            border-radius: 4px 12px 12px 4px;
+            box-shadow: 
+                inset 4px 0 10px rgba(0,0,0,0.5), 
+                10px 10px 30px rgba(0,0,0,0.6);   
+        }
+
+        .cover-border {
+            position: absolute;
+            top: 5%; left: 5%; right: 5%; bottom: 5%;
+            border: 2px solid var(--gold);
+            border-radius: 2px 8px 8px 2px;
+            pointer-events: none;
+            box-shadow: 0 0 5px rgba(212, 175, 55, 0.3);
+            z-index: 5; 
+        }
+
+        /* Front Page Content */
+        .front-content {
+            position: absolute;
+            width: 100%; height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            backface-visibility: hidden;
+            z-index: 2;
+            transform: translateZ(1px); 
+            padding: 0; 
+            overflow: hidden;
+            border-radius: 0 10px 10px 0; /* Default page curve */
+        }
+        
+        /* Cover specific radius */
+        .cover .front-content {
+            border-radius: 4px 12px 12px 4px;
+        }
+
+        .back-content {
+            position: absolute;
+            width: 100%; height: 100%;
+            background: linear-gradient(to right, #e3cfaa, #f4e4bc);
+            transform: rotateY(180deg);
+            backface-visibility: hidden;
+            border-radius: 4px 0 0 4px;
+            box-shadow: inset -5px 0 10px rgba(0,0,0,0.1);
+            /* Texture for back of pages (blank) */
+            background-image: url("data:image/svg+xml,%3Csvg width='100%25' height='100%25' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='paper'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.04' numOctaves='5'/%3E%3CfeColorMatrix type='matrix' values='1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0.1 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23paper)' opacity='0.4'/%3E%3C/svg%3E");
+        }
+
+        /* Internal Pages */
+        .sheet {
+            background-color: var(--page-bg);
+            background-image: linear-gradient(to right, #e3d2b2 0%, #f4e4bc 20%, #f4e4bc 95%, #decba7 100%);
+            border-radius: 0 10px 10px 0;
+            box-shadow: 
+                inset 3px 0 10px rgba(0,0,0,0.1), 
+                1px 1px 4px rgba(0,0,0,0.2);     
+        }
+
+        .sheet .front-content {
+            padding: 8px; /* Small padding for frame effect */
+            box-sizing: border-box;
+            background-image: url("data:image/svg+xml,%3Csvg width='100%25' height='100%25' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='paper'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.04' numOctaves='5'/%3E%3CfeColorMatrix type='matrix' values='1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0.2 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23paper)' opacity='0.3'/%3E%3C/svg%3E");
+        }
+        
+        /* Image styling */
+        .page-img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover; 
+            border: 2px solid #5a4a3a;
+            border-radius: 2px;
+            filter: sepia(0.3) contrast(1.1);
+            background-color: #d1bfa1;
+            box-shadow: 1px 1px 4px rgba(0,0,0,0.2);
+            display: block;
+        }
+
+        /* Stack Order: 
+           We have Cover + 6 Image Pages + Back Cover
+           Total visual pages: 8
+        */
+        #page1 { z-index: 8; } /* Cover */
+        #page2 { z-index: 7; } /* Img1 */
+        #page3 { z-index: 6; } /* Img2 */
+        #page4 { z-index: 5; } /* Img3 */
+        #page5 { z-index: 4; } /* Img4 */
+        #page6 { z-index: 3; } /* Img5 */
+        #page7 { z-index: 2; } /* Img6 */
+        #back-cover { z-index: 1; }
+
+        /* Flipped State */
+        .flipped {
+            transform: rotateY(-180deg);
+            z-index: 10 !important; 
+        }
+
+        /* Mobile adjustment for instructions */
+        .hint {
+            position: fixed;
+            top: 20px;
+            width: 100%;
+            text-align: center;
+            color: rgba(255,255,255,0.5);
+            font-size: 0.8rem;
+            pointer-events: none;
+            text-shadow: 0 1px 2px black;
+            padding: 0 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="stars" id="starContainer"></div>
+    <div class="hint">Tilt to explore • Tap to flip</div>
+
+    <div class="scene" id="scene">
+        <div class="book" id="book">
+            
+            <!-- Page 1: Front Cover -->
+            <div class="page cover" id="page1" onclick="flipPage(1)">
+                <div class="front-content">
+                    <img src="https://placehold.co/400x520/2a1414/d4af37?text=The+Book+of+Spells" alt="Cover" class="page-img" style="border:none; border-radius: 4px 12px 12px 4px;">
+                </div>
+                <div class="back-content"></div>
+            </div>
+
+            <!-- Page 2: Img 1 -->
+            <div class="page sheet" id="page2" onclick="flipPage(2)">
+                <div class="front-content">
+                    <img src="https://placehold.co/380x500/f4e4bc/4a3b2a?text=Img+1" alt="img1" class="page-img">
+                </div>
+                <div class="back-content"></div>
+            </div>
+
+            <!-- Page 3: Img 2 -->
+            <div class="page sheet" id="page3" onclick="flipPage(3)">
+                <div class="front-content">
+                    <img src="https://placehold.co/380x500/f4e4bc/4a3b2a?text=Img+2" alt="img2" class="page-img">
+                </div>
+                <div class="back-content"></div>
+            </div>
+
+            <!-- Page 4: Img 3 -->
+             <div class="page sheet" id="page4" onclick="flipPage(4)">
+                <div class="front-content">
+                    <img src="https://placehold.co/380x500/f4e4bc/4a3b2a?text=Img+3" alt="img3" class="page-img">
+                </div>
+                <div class="back-content"></div>
+            </div>
+
+            <!-- Page 5: Img 4 -->
+            <div class="page sheet" id="page5" onclick="flipPage(5)">
+               <div class="front-content">
+                   <img src="https://placehold.co/380x500/f4e4bc/4a3b2a?text=Img+4" alt="img4" class="page-img">
+               </div>
+               <div class="back-content"></div>
+           </div>
+
+           <!-- Page 6: Img 5 -->
+           <div class="page sheet" id="page6" onclick="flipPage(6)">
+               <div class="front-content">
+                   <img src="https://placehold.co/380x500/f4e4bc/4a3b2a?text=Img+5" alt="img5" class="page-img">
+               </div>
+               <div class="back-content"></div>
+           </div>
+
+           <!-- Page 7: Img 6 -->
+           <div class="page sheet" id="page7" onclick="flipPage(7)">
+               <div class="front-content">
+                   <img src="https://placehold.co/380x500/f4e4bc/4a3b2a?text=Img+6" alt="img6" class="page-img">
+               </div>
+               <div class="back-content"></div>
+           </div>
+
+            <!-- Back Cover -->
+            <div class="page cover" id="back-cover">
+                <div class="front-content">
+                    <!-- This face is hidden by Page 7 initially -->
+                </div>
+                <div class="back-content cover" style="transform: rotateY(180deg); border-radius: 12px 4px 4px 12px; box-shadow: -10px 10px 30px rgba(0,0,0,0.6);">
+                    <!-- Outside Back Cover -->
+                    <div class="cover-border"></div>
+                    <div class="flex items-center justify-center h-full">
+                        <span class="text-gold text-2xl font-bold tracking-widest opacity-80" style="color: var(--gold);">H P</span>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        /* --- Particle System --- */
+        const starContainer = document.getElementById('starContainer');
+        const particleCount = 30;
+
+        for (let i = 0; i < particleCount; i++) {
+            let p = document.createElement('div');
+            p.classList.add('particle');
+            let size = Math.random() * 3 + 1;
+            p.style.width = `${size}px`;
+            p.style.height = `${size}px`;
+            p.style.left = `${Math.random() * 100}vw`;
+            p.style.top = `${Math.random() * 100}vh`;
+            p.style.animationDuration = `${Math.random() * 5 + 5}s`;
+            p.style.animationDelay = `${Math.random() * 5}s`;
+            starContainer.appendChild(p);
+        }
+
+        /* --- 3D Parallax Tilt Logic (Mouse & Touch) --- */
+        const scene = document.getElementById('scene');
+        const book = document.getElementById('book');
+        let bounds = document.body.getBoundingClientRect();
+
+        function handleMove(clientX, clientY) {
+            // Calculate rotation based on center of screen
+            const centerX = bounds.width / 2;
+            const centerY = bounds.height / 2;
+            
+            // Limit tilt on mobile to be less extreme
+            const limit = window.innerWidth < 768 ? 10 : 15;
+
+            const rotateY = ((clientX - centerX) / centerX) * limit; 
+            const rotateX = -((clientY - centerY) / centerY) * limit; 
+
+            scene.style.transform = `rotateX(${rotateX}deg) rotateY(${rotateY}deg)`;
+            
+            const starX = ((clientX - centerX) / centerX) * -20;
+            const starY = ((clientY - centerY) / centerY) * -20;
+            starContainer.style.transform = `translate(${starX}px, ${starY}px)`;
+        }
+        
+        document.addEventListener('mousemove', (e) => {
+            handleMove(e.clientX, e.clientY);
+        });
+
+        document.addEventListener('touchmove', (e) => {
+            if(e.touches.length > 0) {
+                const t = e.touches[0];
+                handleMove(t.clientX, t.clientY);
+            }
+        });
+
+        window.addEventListener('resize', () => {
+            bounds = document.body.getBoundingClientRect();
+        });
+
+        /* --- Book Flip Logic --- */
+        // We have Pages 1 through 7 visible, plus a Back Cover container
+        const totalPages = 7; 
+
+        function flipPage(pageNum) {
+            const page = document.getElementById(`page${pageNum}`);
+            
+            if (page.classList.contains('flipped')) {
+                // Flip back (Left to Right)
+                page.classList.remove('flipped');
+                
+                // Restore z-index so it sits back on top of the stack properly
+                setTimeout(() => {
+                    // Original Z-index formula: 8 - (pageNum - 1)
+                    // Page 1: 8, Page 2: 7, ... Page 7: 2
+                    page.style.zIndex = (8 - (pageNum - 1));
+                }, 400); 
+                
+            } else {
+                // Flip forward (Right to Left)
+                page.classList.add('flipped');
+                
+                // When flipping forward, z-index needs to handle overlapping "back" of pages.
+                // CSS handle visibility mostly, but we keep it high during anim.
+                
+                // --- AUTO CLOSE LOGIC ---
+                if (pageNum === totalPages) {
+                    setTimeout(() => {
+                        resetBook();
+                    }, 2000); 
+                }
+            }
+            
+            updateBookThickness();
+        }
+
+        function updateBookThickness() {
+            // Slight shift to center the open book
+            const openPages = document.querySelectorAll('.flipped').length;
+            
+            let xShift = 0;
+            let rotX = 20;
+
+            if (window.innerWidth < 768) rotX = 10;
+
+            if(openPages > 0 && openPages < totalPages) {
+                xShift = 15; // Shift right to center spine
+                if (window.innerWidth < 768) xShift = 10;
+                book.style.transform = `translateX(${xShift}%) rotateX(${rotX}deg)`; 
+            } else {
+                book.style.transform = `translateX(0) rotateX(${rotX}deg)`; 
+            }
+        }
+
+        function resetBook() {
+            for (let i = totalPages; i >= 1; i--) {
+                const p = document.getElementById(`page${i}`);
+                if (p.classList.contains('flipped')) {
+                    setTimeout(() => {
+                         p.classList.remove('flipped');
+                         setTimeout(() => {
+                            p.style.zIndex = (8 - (i - 1));
+                         }, 400);
+                    }, (totalPages - i) * 100);
+                }
+            }
+            
+            setTimeout(() => {
+                updateBookThickness();
+            }, totalPages * 100 + 400);
+        }
+
+    </script>
+</body>
+</html>
